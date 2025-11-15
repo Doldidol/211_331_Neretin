@@ -15,9 +15,14 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+private slots:
+    // слот для кнопки "Открыть"
+    void on_openButton_clicked();
+
 private:
     Ui::MainWindow *ui;
 
+    // загрузка и расшифровка AES-256 файла
     void loadTransactionsEncrypted(const QString &encFileName,
                                    const QString &keyFileName);
 };

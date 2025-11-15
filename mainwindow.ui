@@ -15,6 +15,15 @@
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
+    <!-- Кнопка "Открыть" -->
+    <item>
+     <widget class="QPushButton" name="openButton">
+      <property name="text">
+       <string>Открыть...</string>
+      </property>
+     </widget>
+    </item>
+    <!-- Таблица с данными -->
     <item>
      <widget class="QTableWidget" name="tableWidget">
       <property name="editTriggers">

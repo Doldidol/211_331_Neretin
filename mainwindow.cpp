@@ -8,6 +8,7 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QStringList>
+#include <QFileDialog>
 
 // OpenSSL
 #include <openssl/evp.h>
@@ -133,30 +134,8 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(tr("Банковские транзакции — вариант 2"));
     resize(900, 400);
 
-    const QString appDir = QCoreApplication::applicationDirPath();
-
-    // Ищем зашифрованный файл и файл с ключом:
-    QString encPath = appDir + "/transactions.enc";
-    if (!QFile::exists(encPath)) {
-        encPath = appDir + "/../transactions.enc";
-    }
-
-    QString keyPath = appDir + "/aes_key.txt";
-    if (!QFile::exists(keyPath)) {
-        keyPath = appDir + "/../aes_key.txt";
-    }
-
-    if (!QFile::exists(encPath) || !QFile::exists(keyPath)) {
-        QMessageBox::warning(
-            this,
-            tr("Ошибка"),
-            tr("Не найден зашифрованный файл или файл с ключом.\n"
-               "Ожидаются файлы:\n%1\n%2")
-                .arg(encPath, keyPath));
-        return;
-    }
-
-    loadTransactionsEncrypted(encPath, keyPath);
+    // НИЧЕГО НЕ ОТКРЫВАЕМ АВТОМАТИЧЕСКИ.
+    // Пользователь сам нажимает "Открыть..." и выбирает файл.
 }
 
 MainWindow::~MainWindow()
@@ -164,6 +143,42 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
+// Слот для кнопки "Открыть..."
+void MainWindow::on_openButton_clicked()
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+
+    QString fileName = QFileDialog::getOpenFileName(
+        this,
+        tr("Выбор файла с транзакциями"),
+        appDir,
+        tr("Зашифрованные файлы (*.enc);;Все файлы (*.*)")
+        );
+
+    if (fileName.isEmpty())
+        return;
+
+    // Ищем aes_key.txt рядом с приложением
+    QString keyPath = appDir + "/aes_key.txt";
+    if (!QFile::exists(keyPath)) {
+        keyPath = appDir + "/../aes_key.txt";
+    }
+
+    if (!QFile::exists(keyPath)) {
+        QMessageBox::warning(
+            this,
+            tr("Ошибка"),
+            tr("Файл ключа aes_key.txt не найден рядом с приложением.")
+            );
+        return;
+    }
+
+    // Очищаем таблицу и загружаем выбранный файл
+    ui->tableWidget->setRowCount(0);
+    loadTransactionsEncrypted(fileName, keyPath);
+}
+
+// Чтение aes_key.txt, расшифровка AES-256-CBC и разбор записей
 void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
                                            const QString &keyFileName)
 {
@@ -243,6 +258,8 @@ void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
     }
 
     // 4. Разбираем расшифрованный текст как обычный transactions.txt
+    ui->tableWidget->setRowCount(0);
+
     QTextStream in(plain);
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     in.setCodec("UTF-8");
