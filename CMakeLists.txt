@@ -19,6 +19,9 @@ set(PROJECT_SOURCES
     mainwindow.cpp
     mainwindow.h
     mainwindow.ui
+    pindialog.cpp
+    pindialog.h
+    pindialog.ui
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
