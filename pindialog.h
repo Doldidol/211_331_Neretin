@@ -21,4 +21,4 @@ private:
     Ui::PinDialog *ui;
 };
 
-#endif // PINDIALOG_H
+#endif

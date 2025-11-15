@@ -8,7 +8,6 @@ PinDialog::PinDialog(QWidget *parent)
     ui->setupUi(this);
 
     setWindowTitle(tr("Ввод пин-кода"));
-    // Фокус сразу в поле ввода
     ui->lineEditPin->setEchoMode(QLineEdit::Password);
     ui->lineEditPin->setFocus();
 }

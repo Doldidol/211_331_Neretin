@@ -14,7 +14,7 @@ QString sha256Hex(const QString &text)
     hash.addData(text.toUtf8());
     return QString::fromLatin1(hash.result().toHex());
 }
-} // anonymous namespace
+}
 
 int main(int argc, char *argv[])
 {

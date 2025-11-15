@@ -118,7 +118,7 @@ MainWindow::MainWindow(QWidget *parent)
     headers << tr("Хеш")
             << tr("Счёт списания")
             << tr("Счёт зачисления")
-            << tr("Дата/время (ISO 8601)");
+            << tr("Дата/время");
     ui->tableWidget->setHorizontalHeaderLabels(headers);
 
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(
@@ -130,7 +130,7 @@ MainWindow::MainWindow(QWidget *parent)
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(
         3, QHeaderView::ResizeToContents);
 
-    setWindowTitle(tr("Банковские транзакции — вариант 2"));
+    setWindowTitle(tr("Банковские транзакции — Неретин"));
     resize(900, 400);
 
 }
@@ -140,7 +140,7 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-// Слот для кнопки "Открыть..."
+
 void MainWindow::on_openButton_clicked()
 {
     const QString appDir = QCoreApplication::applicationDirPath();
