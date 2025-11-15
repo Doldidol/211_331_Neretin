@@ -27,4 +27,4 @@ private:
                                    const QString &keyFileName);
 };
 
-#endif // MAINWINDOW_H
+#endif

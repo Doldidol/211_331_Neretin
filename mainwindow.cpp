@@ -10,7 +10,6 @@
 #include <QStringList>
 #include <QFileDialog>
 
-// OpenSSL
 #include <openssl/evp.h>
 
 namespace
@@ -104,7 +103,7 @@ QByteArray decryptAes256Cbc(const QByteArray &cipher,
     return plain;
 }
 
-} // anonymous namespace
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -134,8 +133,6 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(tr("Банковские транзакции — вариант 2"));
     resize(900, 400);
 
-    // НИЧЕГО НЕ ОТКРЫВАЕМ АВТОМАТИЧЕСКИ.
-    // Пользователь сам нажимает "Открыть..." и выбирает файл.
 }
 
 MainWindow::~MainWindow()
@@ -182,7 +179,7 @@ void MainWindow::on_openButton_clicked()
 void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
                                            const QString &keyFileName)
 {
-    // 1. Читаем ключ/iv
+    // Читаем ключ/iv
     QFile keyFile(keyFileName);
     if (!keyFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QMessageBox::warning(this,
@@ -228,7 +225,7 @@ void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
         return;
     }
 
-    // 2. Читаем зашифрованный файл
+    // Читаем зашифрованный файл
     QFile encFile(encFileName);
     if (!encFile.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this,
@@ -246,7 +243,7 @@ void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
         return;
     }
 
-    // 3. Расшифровываем
+    // Расшифровываем
     bool ok = false;
     QByteArray plain = decryptAes256Cbc(cipher, keyBytes, ivBytes, &ok);
     if (!ok || plain.isEmpty()) {
@@ -257,7 +254,7 @@ void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
         return;
     }
 
-    // 4. Разбираем расшифрованный текст как обычный transactions.txt
+    // Разбираем расшифрованный текст как обычный transactions.txt
     ui->tableWidget->setRowCount(0);
 
     QTextStream in(plain);
@@ -277,7 +274,6 @@ void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
 
         buffer << line;
 
-        // Одна транзакция = 4 непустые строки: hash, from, to, datetime
         if (buffer.size() == 4) {
             ui->tableWidget->insertRow(row);
 
