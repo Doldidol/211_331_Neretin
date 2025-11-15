@@ -3,8 +3,6 @@
 
 #include <QMainWindow>
 
-class QString;
-
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
@@ -20,7 +18,8 @@ public:
 private:
     Ui::MainWindow *ui;
 
-    void loadTransactions(const QString &fileName);
+    void loadTransactionsEncrypted(const QString &encFileName,
+                                   const QString &keyFileName);
 };
 
 #endif // MAINWINDOW_H

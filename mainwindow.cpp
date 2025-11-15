@@ -9,13 +9,109 @@
 #include <QHeaderView>
 #include <QStringList>
 
+// OpenSSL
+#include <openssl/evp.h>
+
+namespace
+{
+
+// Преобразуем hex-строку в сырые байты
+QByteArray hexToBytes(const QString &hex)
+{
+    QByteArray result;
+    QString clean = hex.trimmed();
+    if (clean.isEmpty())
+        return result;
+
+    if (clean.size() % 2 != 0) {
+        // нечётное число символов — ошибка
+        return QByteArray();
+    }
+
+    result.reserve(clean.size() / 2);
+    for (int i = 0; i < clean.size(); i += 2) {
+        QString byteStr = clean.mid(i, 2);
+        bool ok = false;
+        int val = byteStr.toInt(&ok, 16);
+        if (!ok) {
+            return QByteArray();
+        }
+        result.append(static_cast<char>(val));
+    }
+    return result;
+}
+
+// Расшифровка AES-256-CBC через OpenSSL
+QByteArray decryptAes256Cbc(const QByteArray &cipher,
+                            const QByteArray &key,
+                            const QByteArray &iv,
+                            bool *ok = nullptr)
+{
+    if (ok)
+        *ok = false;
+
+    if (key.size() != 32 || iv.size() != 16 || cipher.isEmpty()) {
+        return QByteArray();
+    }
+
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        return QByteArray();
+    }
+
+    QByteArray plain;
+    plain.resize(cipher.size() + EVP_MAX_BLOCK_LENGTH);
+
+    int len = 0;
+    int plainLen = 0;
+
+    if (1 != EVP_DecryptInit_ex(ctx,
+                                EVP_aes_256_cbc(),
+                                nullptr,
+                                reinterpret_cast<const unsigned char*>(key.constData()),
+                                reinterpret_cast<const unsigned char*>(iv.constData()))) {
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+
+    if (1 != EVP_DecryptUpdate(ctx,
+                               reinterpret_cast<unsigned char*>(plain.data()),
+                               &len,
+                               reinterpret_cast<const unsigned char*>(cipher.constData()),
+                               cipher.size())) {
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+
+    plainLen = len;
+
+    if (1 != EVP_DecryptFinal_ex(ctx,
+                                 reinterpret_cast<unsigned char*>(plain.data()) + len,
+                                 &len)) {
+        EVP_CIPHER_CTX_free(ctx);
+        return QByteArray();
+    }
+
+    plainLen += len;
+    EVP_CIPHER_CTX_free(ctx);
+
+    plain.resize(plainLen);
+
+    if (ok)
+        *ok = true;
+
+    return plain;
+}
+
+} // anonymous namespace
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
 
-    // Настраиваем таблицу: 4 столбца под поля варианта 2
+    // Настраиваем таблицу: 4 столбца
     ui->tableWidget->setColumnCount(4);
 
     QStringList headers;
@@ -25,7 +121,6 @@ MainWindow::MainWindow(QWidget *parent)
             << tr("Дата/время (ISO 8601)");
     ui->tableWidget->setHorizontalHeaderLabels(headers);
 
-    // Растягиваем первый столбец (хеш), остальные по содержимому
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(
         0, QHeaderView::Stretch);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(
@@ -35,14 +130,33 @@ MainWindow::MainWindow(QWidget *parent)
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(
         3, QHeaderView::ResizeToContents);
 
-    // Пытаемся найти файл данных рядом с exe или на уровень выше (корень проекта)
+    setWindowTitle(tr("Банковские транзакции — вариант 2"));
+    resize(900, 400);
+
     const QString appDir = QCoreApplication::applicationDirPath();
-    QString filePath = appDir + "/transactions.txt";
-    if (!QFile::exists(filePath)) {
-        filePath = appDir + "/../transactions.txt";
+
+    // Ищем зашифрованный файл и файл с ключом:
+    QString encPath = appDir + "/transactions.enc";
+    if (!QFile::exists(encPath)) {
+        encPath = appDir + "/../transactions.enc";
     }
 
-    loadTransactions(filePath);
+    QString keyPath = appDir + "/aes_key.txt";
+    if (!QFile::exists(keyPath)) {
+        keyPath = appDir + "/../aes_key.txt";
+    }
+
+    if (!QFile::exists(encPath) || !QFile::exists(keyPath)) {
+        QMessageBox::warning(
+            this,
+            tr("Ошибка"),
+            tr("Не найден зашифрованный файл или файл с ключом.\n"
+               "Ожидаются файлы:\n%1\n%2")
+                .arg(encPath, keyPath));
+        return;
+    }
+
+    loadTransactionsEncrypted(encPath, keyPath);
 }
 
 MainWindow::~MainWindow()
@@ -50,18 +164,86 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-void MainWindow::loadTransactions(const QString &fileName)
+void MainWindow::loadTransactionsEncrypted(const QString &encFileName,
+                                           const QString &keyFileName)
 {
-    QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    // 1. Читаем ключ/iv
+    QFile keyFile(keyFileName);
+    if (!keyFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QMessageBox::warning(this,
                              tr("Ошибка"),
-                             tr("Не удалось открыть файл данных:\n%1")
-                                 .arg(fileName));
+                             tr("Не удалось открыть файл ключа:\n%1")
+                                 .arg(keyFileName));
         return;
     }
 
-    QTextStream in(&file);
+    QTextStream keyStream(&keyFile);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    keyStream.setCodec("UTF-8");
+#endif
+
+    QString keyHex;
+    QString ivHex;
+
+    while (!keyStream.atEnd() && keyHex.isEmpty()) {
+        keyHex = keyStream.readLine().trimmed();
+    }
+    while (!keyStream.atEnd() && ivHex.isEmpty()) {
+        ivHex = keyStream.readLine().trimmed();
+    }
+
+    if (keyHex.isEmpty() || ivHex.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("Ошибка"),
+                             tr("В файле ключа должно быть две непустые строки:\n"
+                                "ключ и IV в hex."));
+        return;
+    }
+
+    QByteArray keyBytes = hexToBytes(keyHex);
+    QByteArray ivBytes  = hexToBytes(ivHex);
+
+    if (keyBytes.size() != 32 || ivBytes.size() != 16) {
+        QMessageBox::warning(
+            this,
+            tr("Ошибка"),
+            tr("Неверные размеры key/iv.\n"
+               "Ожидается 32 байта (64 hex символа) для ключа\n"
+               "и 16 байт (32 hex символа) для IV."));
+        return;
+    }
+
+    // 2. Читаем зашифрованный файл
+    QFile encFile(encFileName);
+    if (!encFile.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this,
+                             tr("Ошибка"),
+                             tr("Не удалось открыть зашифрованный файл:\n%1")
+                                 .arg(encFileName));
+        return;
+    }
+
+    QByteArray cipher = encFile.readAll();
+    if (cipher.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("Ошибка"),
+                             tr("Зашифрованный файл пустой или ошибка чтения."));
+        return;
+    }
+
+    // 3. Расшифровываем
+    bool ok = false;
+    QByteArray plain = decryptAes256Cbc(cipher, keyBytes, ivBytes, &ok);
+    if (!ok || plain.isEmpty()) {
+        QMessageBox::warning(this,
+                             tr("Ошибка"),
+                             tr("Не удалось расшифровать файл. "
+                                "Проверьте ключ, IV и режим AES-256-CBC."));
+        return;
+    }
+
+    // 4. Разбираем расшифрованный текст как обычный transactions.txt
+    QTextStream in(plain);
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     in.setCodec("UTF-8");
 #endif
@@ -73,7 +255,6 @@ void MainWindow::loadTransactions(const QString &fileName)
         QString line = in.readLine().trimmed();
 
         if (line.isEmpty()) {
-            // Пустая строка – просто разделитель, пропускаем
             continue;
         }
 
@@ -97,7 +278,6 @@ void MainWindow::loadTransactions(const QString &fileName)
         }
     }
 
-    // Если в конце файла оказался не полный блок, просто игнорируем
     if (!buffer.isEmpty() && buffer.size() != 4) {
         QMessageBox::information(
             this,
